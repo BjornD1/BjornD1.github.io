@@ -1,60 +1,84 @@
-// Create column selector
-function createColumnSelector(currentColumnId) {
-    // Create a select element
-    const select = document.createElement('select');
-    select.id = 'column-selector';
-    select.className = 'column-selector';
+// Define the columns
+const columns = [
+  { id: 'waiting-on', title: 'Waiting On', color: 'neon-blue' },
+  { id: 'in-progress', title: 'In Progress', color: 'neon-green' },
+  { id: 'on-deck', title: 'On Deck', color: 'neon-yellow' },
+  { id: 'pipeline', title: 'Pipeline', color: 'neon-orange' },
+  { id: 'low-priority', title: 'Low Priority', color: 'neon-purple' },
+  { id: 'ideas', title: 'Ideas', color: 'neon-pink' }
+];
+
+// State management
+let tasks = {};
+let completedTasks = [];
+let currentTask = null;
+let draggedTask = null;
+const userId = "default-user"; // We'll replace this with real authentication later
+
+// DOM elements
+const kanbanBoard = document.getElementById('kanban-board');
+const completedTasksView = document.getElementById('completed-tasks');
+const completedList = document.getElementById('completed-list');
+const viewCompletedBtn = document.getElementById('view-completed');
+const backToBoardBtn = document.getElementById('back-to-board');
+const taskModal = document.getElementById('task-modal');
+const taskForm = document.getElementById('task-form');
+const modalTitle = document.getElementById('modal-title');
+const taskTitleInput = document.getElementById('task-title');
+const taskDescriptionInput = document.getElementById('task-description');
+const taskDueDateInput = document.getElementById('task-due-date');
+const taskColumnDisplay = document.getElementById('task-column');
+const taskBigThreeCheckbox = document.getElementById('task-big-three');
+const deleteTaskBtn = document.getElementById('delete-task');
+const completeTaskBtn = document.getElementById('complete-task');
+const closeModalBtn = document.getElementById('close-modal');
+
+// Load data from Firestore
+async function loadData() {
+  try {
+    // Show loading indicator
+    kanbanBoard.innerHTML = '<div class="loading">Loading your tasks...</div>';
     
-    // Add options for each column
+    // Initialize empty tasks object with all columns
+    tasks = {};
     columns.forEach(column => {
-      const option = document.createElement('option');
-      option.value = column.id;
-      option.textContent = column.title;
-      option.selected = column.id === currentColumnId;
-      select.appendChild(option);
+      tasks[column.id] = [];
     });
     
-    // Clear existing content
-    taskColumnDisplay.innerHTML = '';
+    // Get tasks from Firestore
+    const tasksCollection = window.firestore.collection(window.db, `users/${userId}/tasks`);
+    const snapshot = await window.firestore.getDocs(tasksCollection);
     
-    // Add the select element
-    taskColumnDisplay.appendChild(select);
-  }// Define the columns
-const columns = [
-    { id: 'waiting-on', title: 'Waiting On', color: 'neon-blue' },
-    { id: 'in-progress', title: 'In Progress', color: 'neon-green' },
-    { id: 'on-deck', title: 'On Deck', color: 'neon-yellow' },
-    { id: 'pipeline', title: 'Pipeline', color: 'neon-orange' },
-    { id: 'low-priority', title: 'Low Priority', color: 'neon-purple' },
-    { id: 'ideas', title: 'Ideas', color: 'neon-pink' }
-  ];
-  
-  // State management
-  let tasks = {};
-  let completedTasks = [];
-  let currentTask = null;
-  let draggedTask = null;
-  
-  // DOM elements
-  const kanbanBoard = document.getElementById('kanban-board');
-  const completedTasksView = document.getElementById('completed-tasks');
-  const completedList = document.getElementById('completed-list');
-  const viewCompletedBtn = document.getElementById('view-completed');
-  const backToBoardBtn = document.getElementById('back-to-board');
-  const taskModal = document.getElementById('task-modal');
-  const taskForm = document.getElementById('task-form');
-  const modalTitle = document.getElementById('modal-title');
-  const taskTitleInput = document.getElementById('task-title');
-  const taskDescriptionInput = document.getElementById('task-description');
-  const taskDueDateInput = document.getElementById('task-due-date');
-  const taskColumnDisplay = document.getElementById('task-column');
-  const taskBigThreeCheckbox = document.getElementById('task-big-three');
-  const deleteTaskBtn = document.getElementById('delete-task');
-  const completeTaskBtn = document.getElementById('complete-task');
-  const closeModalBtn = document.getElementById('close-modal');
-  
-  // Load data from localStorage
-  function loadData() {
+    snapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id; // Use Firestore document ID as task ID
+      if (tasks[task.column]) {
+        tasks[task.column].push(task);
+      }
+    });
+    
+    // Get completed tasks
+    const completedTasksCollection = window.firestore.collection(window.db, `users/${userId}/completedTasks`);
+    const completedSnapshot = await window.firestore.getDocs(completedTasksCollection);
+    
+    completedTasks = [];
+    completedSnapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id;
+      completedTasks.push(task);
+    });
+    
+    // Sort completed tasks by completedAt date (newest first)
+    completedTasks.sort((a, b) => {
+      return new Date(b.completedAt) - new Date(a.completedAt);
+    });
+    
+    // Show the board
+    renderBoard();
+  } catch (error) {
+    console.error("Error loading data:", error);
+    
+    // Fall back to localStorage if Firestore fails
     const savedTasks = localStorage.getItem('kanban-tasks');
     const savedCompletedTasks = localStorage.getItem('kanban-completed-tasks');
     
@@ -67,273 +91,308 @@ const columns = [
         tasks[column.id] = [];
       }
     });
-  }
-  
-  // Save data to localStorage
-  function saveData() {
-    localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
-    localStorage.setItem('kanban-completed-tasks', JSON.stringify(completedTasks));
-  }
-  
-  // Generate a unique ID
-  function generateId() {
-    return Date.now().toString(36) + Math.random().toString(36).substr(2);
-  }
-  
-  // Format date for display
-  function formatDate(dateString) {
-    if (!dateString) return '';
     
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    renderBoard();
+    
+    showNotification('Error loading from database. Using local data instead.', 'error');
   }
+}
+
+// Save data to local storage (as backup)
+function saveDataToLocalStorage() {
+  localStorage.setItem('kanban-tasks', JSON.stringify(tasks));
+  localStorage.setItem('kanban-completed-tasks', JSON.stringify(completedTasks));
+}
+
+// Generate a unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+// Format date for display
+function formatDate(dateString) {
+  if (!dateString) return '';
   
-  // Get column title from ID
-  function getColumnTitle(columnId) {
-    const column = columns.find(col => col.id === columnId);
-    return column ? column.title : '';
-  }
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Get column title from ID
+function getColumnTitle(columnId) {
+  const column = columns.find(col => col.id === columnId);
+  return column ? column.title : '';
+}
+
+// Render the kanban board
+function renderBoard() {
+  kanbanBoard.innerHTML = '';
   
-  // Render the kanban board
-  function renderBoard() {
-    kanbanBoard.innerHTML = '';
+  columns.forEach(column => {
+    const columnEl = document.createElement('div');
+    columnEl.className = 'column';
+    columnEl.dataset.id = column.id;
     
-    columns.forEach(column => {
-      const columnEl = document.createElement('div');
-      columnEl.className = 'column';
-      columnEl.dataset.id = column.id;
-      
-      // Get task count for this column
-      const taskCount = tasks[column.id].length;
-      
-      columnEl.innerHTML = `
-        <div class="column-header">
-          <h2>${column.title} <span class="task-count">${taskCount}</span></h2>
-        </div>
-        <div class="tasks" data-column="${column.id}"></div>
-        <button class="add-task-btn" data-column="${column.id}">+</button>
-      `;
-      
-      kanbanBoard.appendChild(columnEl);
-      
-      const tasksContainer = columnEl.querySelector('.tasks');
-      
-      // Add tasks to the column
-      tasks[column.id].forEach(task => {
-        const taskEl = createTaskElement(task);
-        tasksContainer.appendChild(taskEl);
-      });
-      
-      // Add drag and drop event listeners to the column
-      tasksContainer.addEventListener('dragover', handleDragOver);
-      tasksContainer.addEventListener('drop', handleDrop);
-    });
+    // Get task count for this column
+    const taskCount = tasks[column.id].length;
     
-    // Add event listeners to add task buttons
-    document.querySelectorAll('.add-task-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const columnId = btn.dataset.column;
-        openAddTaskModal(columnId);
-      });
-    });
-  }
-  
-  // Create a task element
-  function createTaskElement(task) {
-    const taskEl = document.createElement('div');
-    taskEl.className = `task ${task.isBigThree ? 'big-three' : ''}`;
-    taskEl.dataset.id = task.id;
-    taskEl.draggable = true;
-    
-    // Check if due date is within 3 days
-    let dueDateClass = '';
-    if (task.dueDate) {
-      const dueDate = new Date(task.dueDate);
-      const today = new Date();
-      
-      // Reset hours to compare dates only
-      dueDate.setHours(0, 0, 0, 0);
-      today.setHours(0, 0, 0, 0);
-      
-      // Calculate difference in milliseconds and convert to days
-      const timeDiff = dueDate.getTime() - today.getTime();
-      const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
-      
-      if (dayDiff <= 3 && dayDiff >= 0) {
-        dueDateClass = 'due-soon';
-      } else if (dayDiff < 0) {
-        dueDateClass = 'overdue';
-      }
-    }
-    
-    taskEl.innerHTML = `
-      <div class="task-header">
-        <div class="task-title">${task.title}</div>
+    columnEl.innerHTML = `
+      <div class="column-header">
+        <h2>${column.title} <span class="task-count">${taskCount}</span></h2>
       </div>
-      ${task.dueDate ? `<div class="task-due-date ${dueDateClass}">Due: ${formatDate(task.dueDate)}</div>` : ''}
+      <div class="tasks" data-column="${column.id}"></div>
+      <button class="add-task-btn" data-column="${column.id}">+</button>
     `;
     
-    // Add event listeners
-    taskEl.addEventListener('click', openEditTaskModal.bind(null, task));
+    kanbanBoard.appendChild(columnEl);
     
-    // Drag events
-    taskEl.addEventListener('dragstart', handleDragStart);
-    taskEl.addEventListener('dragend', handleDragEnd);
+    const tasksContainer = columnEl.querySelector('.tasks');
     
-    // Add dragover listener to detect when hovering over this task
-    taskEl.addEventListener('dragover', (e) => {
-      e.preventDefault();
-      
-      // We'll highlight the drop target
-      const allTasks = document.querySelectorAll('.task');
-      allTasks.forEach(t => t.classList.remove('drop-target-above', 'drop-target-below'));
-      
-      // Determine if we're in the upper or lower half of the task
-      const rect = taskEl.getBoundingClientRect();
-      const midY = rect.top + rect.height / 2;
-      
-      if (e.clientY < midY) {
-        taskEl.classList.add('drop-target-above');
-      } else {
-        taskEl.classList.add('drop-target-below');
-      }
+    // Add tasks to the column
+    tasks[column.id].forEach(task => {
+      const taskEl = createTaskElement(task);
+      tasksContainer.appendChild(taskEl);
     });
     
-    return taskEl;
-  }
+    // Add drag and drop event listeners to the column
+    tasksContainer.addEventListener('dragover', handleDragOver);
+    tasksContainer.addEventListener('drop', handleDrop);
+  });
   
-  // Render completed tasks
-  function renderCompletedTasks() {
-    completedList.innerHTML = '';
-    
-    if (completedTasks.length === 0) {
-      completedList.innerHTML = '<p>No completed tasks yet.</p>';
-      return;
-    }
-    
-    completedTasks.forEach(task => {
-      const completedItem = document.createElement('div');
-      completedItem.className = 'completed-item';
-      
-      completedItem.innerHTML = `
-        <div class="completed-task-row">
-          <span class="completed-title">${task.title}</span>
-          <div class="completed-info">
-            <span class="completed-date">Completed: ${formatDate(task.completedAt)}</span>
-            <button class="restore-btn" data-id="${task.id}">Restore</button>
-          </div>
-        </div>
-      `;
-      
-      completedList.appendChild(completedItem);
+  // Add event listeners to add task buttons
+  document.querySelectorAll('.add-task-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const columnId = btn.dataset.column;
+      openAddTaskModal(columnId);
     });
-    
-    // Add event listeners to restore buttons
-    document.querySelectorAll('.restore-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const taskId = btn.dataset.id;
-        restoreTask(taskId);
-      });
-    });
-  }
+  });
+}
+
+// Create a task element
+function createTaskElement(task) {
+  const taskEl = document.createElement('div');
+  taskEl.className = `task ${task.isBigThree ? 'big-three' : ''}`;
+  taskEl.dataset.id = task.id;
+  taskEl.draggable = true;
   
-  // Toggle between board and completed tasks view
-  function toggleCompletedTasksView() {
-    const isShowingCompleted = !kanbanBoard.classList.contains('hidden');
+  // Check if due date is within 3 days
+  let dueDateClass = '';
+  if (task.dueDate) {
+    const dueDate = new Date(task.dueDate);
+    const today = new Date();
     
-    if (isShowingCompleted) {
-      kanbanBoard.classList.add('hidden');
-      completedTasksView.classList.remove('hidden');
-      viewCompletedBtn.textContent = 'Back to Board';
-      renderCompletedTasks();
-    } else {
-      kanbanBoard.classList.remove('hidden');
-      completedTasksView.classList.add('hidden');
-      viewCompletedBtn.textContent = 'View Completed Tasks';
+    // Reset hours to compare dates only
+    dueDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+    
+    // Calculate difference in milliseconds and convert to days
+    const timeDiff = dueDate.getTime() - today.getTime();
+    const dayDiff = Math.ceil(timeDiff / (1000 * 3600 * 24));
+    
+    if (dayDiff <= 3 && dayDiff >= 0) {
+      dueDateClass = 'due-soon';
+    } else if (dayDiff < 0) {
+      dueDateClass = 'overdue';
     }
   }
   
-  // Open task modal in add mode
-  function openAddTaskModal(columnId) {
-    currentTask = {
-      id: generateId(),
-      title: '',
-      description: '',
-      dueDate: '',
-      column: columnId,
-      isBigThree: false,
-      isNew: true
-    };
-    
-    modalTitle.textContent = 'Add New Task';
-    taskTitleInput.value = '';
-    taskDescriptionInput.value = '';
-    taskDueDateInput.value = '';
-    
-    // Create column selector
-    createColumnSelector(columnId);
-    
-    taskBigThreeCheckbox.checked = false;
-    
-    deleteTaskBtn.style.display = 'none';
-    completeTaskBtn.style.display = 'none';
-    
-    taskModal.classList.remove('hidden');
-    
-    // Focus on the title input when modal opens
-    setTimeout(() => {
-      taskTitleInput.focus();
-    }, 100);
-  }
+  taskEl.innerHTML = `
+    <div class="task-header">
+      <div class="task-title">${task.title}</div>
+    </div>
+    ${task.dueDate ? `<div class="task-due-date ${dueDateClass}">Due: ${formatDate(task.dueDate)}</div>` : ''}
+  `;
   
-  // Open task modal in edit mode
-  function openEditTaskModal(task) {
-    currentTask = { ...task }; // Create a deep copy of the task to avoid reference issues
-    
-    modalTitle.textContent = 'Edit Task';
-    taskTitleInput.value = task.title;
-    taskDescriptionInput.value = task.description || '';
-    
-    // Handle date conversion properly
-    if (task.dueDate) {
-      // Convert ISO string to local date format for input
-      const dueDate = new Date(task.dueDate);
-      const year = dueDate.getFullYear();
-      const month = String(dueDate.getMonth() + 1).padStart(2, '0');
-      const day = String(dueDate.getDate()).padStart(2, '0');
-      taskDueDateInput.value = `${year}-${month}-${day}`;
-    } else {
-      taskDueDateInput.value = '';
-    }
-    
-    // Create column selector instead of just displaying it
-    createColumnSelector(task.column);
-    
-    taskBigThreeCheckbox.checked = task.isBigThree;
-    
-    deleteTaskBtn.style.display = 'block';
-    completeTaskBtn.style.display = 'block';
-    
-    taskModal.classList.remove('hidden');
-    
-    // Focus on the title input when modal opens
-    setTimeout(() => {
-      taskTitleInput.focus();
-    }, 100);
-  }
+  // Add event listeners
+  taskEl.addEventListener('click', openEditTaskModal.bind(null, task));
   
-  // Close the task modal
-  function closeTaskModal() {
-    taskModal.classList.add('hidden');
-    currentTask = null;
-  }
+  // Drag events
+  taskEl.addEventListener('dragstart', handleDragStart);
+  taskEl.addEventListener('dragend', handleDragEnd);
   
-  // Save a task
-  function saveTask(e) {
+  // Add dragover listener to detect when hovering over this task
+  taskEl.addEventListener('dragover', (e) => {
     e.preventDefault();
     
-    if (!currentTask) return;
+    // We'll highlight the drop target
+    const allTasks = document.querySelectorAll('.task');
+    allTasks.forEach(t => t.classList.remove('drop-target-above', 'drop-target-below'));
+    
+    // Determine if we're in the upper or lower half of the task
+    const rect = taskEl.getBoundingClientRect();
+    const midY = rect.top + rect.height / 2;
+    
+    if (e.clientY < midY) {
+      taskEl.classList.add('drop-target-above');
+    } else {
+      taskEl.classList.add('drop-target-below');
+    }
+  });
   
+  return taskEl;
+}
+
+// Render completed tasks
+function renderCompletedTasks() {
+  completedList.innerHTML = '';
+  
+  if (completedTasks.length === 0) {
+    completedList.innerHTML = '<p>No completed tasks yet.</p>';
+    return;
+  }
+  
+  completedTasks.forEach(task => {
+    const completedItem = document.createElement('div');
+    completedItem.className = 'completed-item';
+    
+    completedItem.innerHTML = `
+      <div class="completed-task-row">
+        <span class="completed-title">${task.title}</span>
+        <div class="completed-info">
+          <span class="completed-date">Completed: ${formatDate(task.completedAt)}</span>
+          <button class="restore-btn" data-id="${task.id}">Restore</button>
+        </div>
+      </div>
+    `;
+    
+    completedList.appendChild(completedItem);
+  });
+  
+  // Add event listeners to restore buttons
+  document.querySelectorAll('.restore-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const taskId = btn.dataset.id;
+      restoreTask(taskId);
+    });
+  });
+}
+
+// Toggle between board and completed tasks view
+function toggleCompletedTasksView() {
+  const isShowingCompleted = !kanbanBoard.classList.contains('hidden');
+  
+  if (isShowingCompleted) {
+    kanbanBoard.classList.add('hidden');
+    completedTasksView.classList.remove('hidden');
+    viewCompletedBtn.textContent = 'Back to Board';
+    renderCompletedTasks();
+  } else {
+    kanbanBoard.classList.remove('hidden');
+    completedTasksView.classList.add('hidden');
+    viewCompletedBtn.textContent = 'View Completed Tasks';
+  }
+}
+
+// Open task modal in add mode
+function openAddTaskModal(columnId) {
+  currentTask = {
+    id: generateId(),
+    title: '',
+    description: '',
+    dueDate: '',
+    column: columnId,
+    isBigThree: false,
+    isNew: true
+  };
+  
+  modalTitle.textContent = 'Add New Task';
+  taskTitleInput.value = '';
+  taskDescriptionInput.value = '';
+  taskDueDateInput.value = '';
+  
+  // Create column selector
+  createColumnSelector(columnId);
+  
+  taskBigThreeCheckbox.checked = false;
+  
+  deleteTaskBtn.style.display = 'none';
+  completeTaskBtn.style.display = 'none';
+  
+  taskModal.classList.remove('hidden');
+  
+  // Focus on the title input when modal opens
+  setTimeout(() => {
+    taskTitleInput.focus();
+  }, 100);
+}
+
+// Open task modal in edit mode
+function openEditTaskModal(task) {
+  currentTask = { ...task }; // Create a deep copy of the task to avoid reference issues
+  
+  modalTitle.textContent = 'Edit Task';
+  taskTitleInput.value = task.title;
+  taskDescriptionInput.value = task.description || '';
+  
+  // Handle date conversion properly
+  if (task.dueDate) {
+    // Convert ISO string to local date format for input
+    const dueDate = new Date(task.dueDate);
+    const year = dueDate.getFullYear();
+    const month = String(dueDate.getMonth() + 1).padStart(2, '0');
+    const day = String(dueDate.getDate()).padStart(2, '0');
+    taskDueDateInput.value = `${year}-${month}-${day}`;
+  } else {
+    taskDueDateInput.value = '';
+  }
+  
+  // Create column selector
+  createColumnSelector(task.column);
+  
+  taskBigThreeCheckbox.checked = task.isBigThree;
+  
+  deleteTaskBtn.style.display = 'block';
+  completeTaskBtn.style.display = 'block';
+  
+  taskModal.classList.remove('hidden');
+  
+  // Focus on the title input when modal opens
+  setTimeout(() => {
+    taskTitleInput.focus();
+  }, 100);
+}
+
+// Create column selector
+function createColumnSelector(currentColumnId) {
+  // Create a select element
+  const select = document.createElement('select');
+  select.id = 'column-selector';
+  select.className = 'column-selector';
+  
+  // Add options for each column
+  columns.forEach(column => {
+    const option = document.createElement('option');
+    option.value = column.id;
+    option.textContent = column.title;
+    option.selected = column.id === currentColumnId;
+    select.appendChild(option);
+  });
+  
+  // Clear existing content
+  taskColumnDisplay.innerHTML = '';
+  
+  // Add the select element
+  taskColumnDisplay.appendChild(select);
+}
+
+// Close the task modal
+function closeTaskModal() {
+  taskModal.classList.add('hidden');
+  currentTask = null;
+}
+
+// Save a task to Firestore
+async function saveTask(e) {
+  e.preventDefault();
+  
+  if (!currentTask) return;
+
+  // Show loading state
+  const saveBtn = taskForm.querySelector('button[type="submit"]');
+  const originalText = saveBtn.textContent;
+  saveBtn.textContent = 'Saving...';
+  saveBtn.disabled = true;
+
+  try {
     // Get due date value and handle it properly
     let dueDate = '';
     if (taskDueDateInput.value) {
@@ -347,83 +406,216 @@ const columns = [
     const selectedColumn = columnSelector.value;
     
     const updatedTask = {
-      ...currentTask,
       title: taskTitleInput.value,
       description: taskDescriptionInput.value,
       dueDate: dueDate,
       column: selectedColumn,
-      isBigThree: taskBigThreeCheckbox.checked
+      isBigThree: taskBigThreeCheckbox.checked,
+      updatedAt: new Date().toISOString()
     };
     
-    // Remove isNew flag if present
-    delete updatedTask.isNew;
-    
     if (currentTask.isNew) {
+      // Add new task to Firestore
+      const tasksCollection = window.firestore.collection(window.db, `users/${userId}/tasks`);
+      const docRef = await window.firestore.addDoc(tasksCollection, updatedTask);
+      
+      // Update local data
+      updatedTask.id = docRef.id;
       tasks[updatedTask.column].push(updatedTask);
     } else {
+      // Update existing task in Firestore
+      const taskDoc = window.firestore.doc(window.db, `users/${userId}/tasks/${currentTask.id}`);
+      await window.firestore.updateDoc(taskDoc, updatedTask);
+      
+      // Update local data
       // Remove the task from its current column first
       tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
       
-      // Then add the updated task to the potentially new column
+      // Add updated task to the potentially new column
+      updatedTask.id = currentTask.id;
       tasks[updatedTask.column].push(updatedTask);
     }
     
-    saveData();
+    // Also save to localStorage as a backup
+    saveDataToLocalStorage();
+    
     renderBoard();
     closeTaskModal();
-  }
-  
-  // Delete a task
-  function deleteTask() {
-    if (!currentTask) return;
     
-    tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
+    showNotification('Task saved successfully!', 'success');
+  } catch (error) {
+    console.error("Error saving task:", error);
     
-    saveData();
+    // Fallback to just using localStorage
+    if (currentTask.isNew) {
+      const newId = generateId();
+      const newTask = {
+        ...currentTask,
+        id: newId,
+        title: taskTitleInput.value,
+        description: taskDescriptionInput.value,
+        dueDate: taskDueDateInput.value ? new Date(taskDueDateInput.value).toISOString() : '',
+        isBigThree: taskBigThreeCheckbox.checked
+      };
+      delete newTask.isNew;
+      
+      tasks[newTask.column].push(newTask);
+    } else {
+      // Remove task from its current column
+      tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
+      
+      // Add the updated task to the selected column
+      const updatedTask = {
+        ...currentTask,
+        title: taskTitleInput.value,
+        description: taskDescriptionInput.value,
+        dueDate: taskDueDateInput.value ? new Date(taskDueDateInput.value).toISOString() : '',
+        column: selectedColumn,
+        isBigThree: taskBigThreeCheckbox.checked
+      };
+      
+      tasks[updatedTask.column].push(updatedTask);
+    }
+    
+    saveDataToLocalStorage();
+    
     renderBoard();
     closeTaskModal();
+    
+    showNotification('Error saving to database. Saved locally instead.', 'error');
+  } finally {
+    // Restore button state
+    saveBtn.textContent = originalText;
+    saveBtn.disabled = false;
+  }
+}
+
+// Delete a task
+async function deleteTask() {
+  if (!currentTask) return;
+  
+  if (!confirm("Are you sure you want to delete this task?")) {
+    return;
   }
   
-  // Complete a task
-  function completeTask() {
-    if (!currentTask) return;
+  try {
+    const taskDoc = window.firestore.doc(window.db, `users/${userId}/tasks/${currentTask.id}`);
     
-    // Remove from active tasks
+    // Delete from Firestore
+    await window.firestore.deleteDoc(taskDoc);
+    
+    // Update local data
     tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
     
-    // Add to completed tasks
+    // Also update localStorage
+    saveDataToLocalStorage();
+    
+    renderBoard();
+    closeTaskModal();
+    
+    showNotification('Task deleted successfully!', 'success');
+  } catch (error) {
+    console.error("Error deleting task:", error);
+    
+    // Fallback to just using localStorage
+    tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
+    saveDataToLocalStorage();
+    
+    renderBoard();
+    closeTaskModal();
+    
+    showNotification('Error deleting from database. Deleted locally instead.', 'error');
+  }
+}
+
+// Complete a task
+async function completeTask() {
+  if (!currentTask) return;
+  
+  try {
+    // Add to completed tasks in Firestore
     const completedTask = {
       ...currentTask,
       completedAt: new Date().toISOString()
     };
     
+    // Remove isNew property if it exists
+    delete completedTask.isNew;
+    
+    // Add to completed tasks collection
+    const completedTasksCollection = window.firestore.collection(window.db, `users/${userId}/completedTasks`);
+    const docRef = await window.firestore.addDoc(completedTasksCollection, completedTask);
+    
+    // Delete from active tasks
+    const taskDoc = window.firestore.doc(window.db, `users/${userId}/tasks/${currentTask.id}`);
+    await window.firestore.deleteDoc(taskDoc);
+    
+    // Update local data
+    tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
+    
+    completedTask.id = docRef.id; // Use the new document ID
     completedTasks.unshift(completedTask);
     
-    saveData();
+    // Update localStorage as backup
+    saveDataToLocalStorage();
+    
     renderBoard();
     closeTaskModal();
+    
+    showNotification('Task completed!', 'success');
+  } catch (error) {
+    console.error("Error completing task:", error);
+    
+    // Fallback to localStorage
+    const completedTask = {
+      ...currentTask,
+      completedAt: new Date().toISOString(),
+    };
+    delete completedTask.isNew;
+    
+    // Update local data
+    tasks[currentTask.column] = tasks[currentTask.column].filter(t => t.id !== currentTask.id);
+    completedTasks.unshift(completedTask);
+    
+    // Update localStorage
+    saveDataToLocalStorage();
+    
+    renderBoard();
+    closeTaskModal();
+    
+    showNotification('Error updating database. Task completed locally instead.', 'error');
   }
+}
+
+// Restore a completed task
+async function restoreTask(taskId) {
+  // Find the task in the completed tasks
+  const taskIndex = completedTasks.findIndex(t => t.id === taskId);
   
-  // Restore a completed task
-  function restoreTask(taskId) {
-    // Find the task in the completed tasks
-    const taskIndex = completedTasks.findIndex(t => t.id === taskId);
+  if (taskIndex === -1) return;
+  
+  // Get the task
+  const task = completedTasks[taskIndex];
+  
+  try {
+    // Remove completedAt property and id for the new document
+    const { completedAt, id, ...restoredTask } = task;
     
-    if (taskIndex === -1) return;
+    // Add back to active tasks in Firestore
+    const tasksCollection = window.firestore.collection(window.db, `users/${userId}/tasks`);
+    const docRef = await window.firestore.addDoc(tasksCollection, restoredTask);
     
-    // Get the task
-    const task = completedTasks[taskIndex];
+    // Delete from completed tasks in Firestore
+    const completedTaskDoc = window.firestore.doc(window.db, `users/${userId}/completedTasks/${task.id}`);
+    await window.firestore.deleteDoc(completedTaskDoc);
     
-    // Remove completedAt property
-    const { completedAt, ...restoredTask } = task;
-    
-    // Add back to active tasks
+    // Update local data
+    restoredTask.id = docRef.id;
     tasks[restoredTask.column].push(restoredTask);
-    
-    // Remove from completed tasks
     completedTasks.splice(taskIndex, 1);
     
-    saveData();
+    // Update localStorage as backup
+    saveDataToLocalStorage();
     
     // Render both views to update UI
     renderCompletedTasks();
@@ -431,19 +623,7 @@ const columns = [
     
     // If we're in the completed tasks view, show a notification
     if (kanbanBoard.classList.contains('hidden')) {
-      const notification = document.createElement('div');
-      notification.className = 'notification';
-      notification.textContent = `"${restoredTask.title}" restored to ${getColumnTitle(restoredTask.column)}`;
-      
-      document.body.appendChild(notification);
-      
-      // Remove notification after 3 seconds
-      setTimeout(() => {
-        notification.classList.add('fade-out');
-        setTimeout(() => {
-          document.body.removeChild(notification);
-        }, 500);
-      }, 3000);
+      showNotification(`"${restoredTask.title}" restored to ${getColumnTitle(restoredTask.column)}`, 'success');
     } else {
       // If we're already on the board view, scroll to the restored task
       setTimeout(() => {
@@ -457,81 +637,114 @@ const columns = [
         }
       }, 100);
     }
+  } catch (error) {
+    console.error("Error restoring task:", error);
+    
+    // Fallback to localStorage
+    const { completedAt, ...restoredTask } = task;
+    tasks[restoredTask.column].push(restoredTask);
+    completedTasks.splice(taskIndex, 1);
+    
+    // Update localStorage
+    saveDataToLocalStorage();
+    
+    renderCompletedTasks();
+    renderBoard();
+    
+    showNotification('Error updating database. Task restored locally instead.', 'error');
   }
+}
+
+// Show notification
+function showNotification(message, type = 'success') {
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.textContent = message;
   
-  // Drag and drop handlers
-  function handleDragStart(e) {
-    const taskId = e.target.dataset.id;
-    const columnId = e.target.closest('.tasks').dataset.column;
-    
-    draggedTask = {
-      id: taskId,
-      columnId: columnId
-    };
-    
-    e.target.classList.add('dragging');
-    
-    // Add dragover and dragleave event listeners to the document 
-    // for the duration of the drag operation
-    document.addEventListener('dragover', handleDocumentDragOver);
-  }
+  document.body.appendChild(notification);
   
-  function handleDragEnd(e) {
-    e.target.classList.remove('dragging');
-    
-    // Remove drag-over class from all columns
+  // Remove notification after 3 seconds
+  setTimeout(() => {
+    notification.classList.add('fade-out');
+    setTimeout(() => {
+      notification.remove();
+    }, 500);
+  }, 3000);
+}
+
+// Drag and drop handlers
+function handleDragStart(e) {
+  const taskId = e.target.dataset.id;
+  const columnId = e.target.closest('.tasks').dataset.column;
+  
+  draggedTask = {
+    id: taskId,
+    columnId: columnId
+  };
+  
+  e.target.classList.add('dragging');
+  
+  // Add dragover and dragleave event listeners to the document 
+  // for the duration of the drag operation
+  document.addEventListener('dragover', handleDocumentDragOver);
+}
+
+function handleDragEnd(e) {
+  e.target.classList.remove('dragging');
+  
+  // Remove drag-over class from all columns
+  document.querySelectorAll('.column').forEach(col => {
+    col.classList.remove('drag-over');
+  });
+  
+  // Remove any task drop indicators
+  document.querySelectorAll('.task').forEach(task => {
+    task.classList.remove('drop-target-above', 'drop-target-below');
+  });
+  
+  // Remove the document event listener when drag ends
+  document.removeEventListener('dragover', handleDocumentDragOver);
+}
+
+function handleDocumentDragOver(e) {
+  // If we're not over a tasks container, clear all column highlights
+  if (!e.target.closest('.tasks')) {
     document.querySelectorAll('.column').forEach(col => {
       col.classList.remove('drag-over');
     });
     
-    // Remove any task drop indicators
+    // Also clear any task drop indicators
     document.querySelectorAll('.task').forEach(task => {
       task.classList.remove('drop-target-above', 'drop-target-below');
     });
-    
-    // Remove the document event listener when drag ends
-    document.removeEventListener('dragover', handleDocumentDragOver);
   }
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
   
-  // New function to handle dragover events at the document level
-  function handleDocumentDragOver(e) {
-    // If we're not over a tasks container, clear all column highlights
-    if (!e.target.closest('.tasks')) {
-      document.querySelectorAll('.column').forEach(col => {
-        col.classList.remove('drag-over');
-      });
-      
-      // Also clear any task drop indicators
-      document.querySelectorAll('.task').forEach(task => {
-        task.classList.remove('drop-target-above', 'drop-target-below');
-      });
-    }
-  }
+  // Remove 'drag-over' class from all columns first
+  document.querySelectorAll('.column').forEach(col => {
+    col.classList.remove('drag-over');
+  });
+
+  // Add 'drag-over' class only to the current column
+  e.currentTarget.closest('.column').classList.add('drag-over');
+}
+
+async function handleDrop(e) {
+  e.preventDefault();
   
-  function handleDragOver(e) {
-    e.preventDefault();
-    
-    // Remove 'drag-over' class from all columns first
-    document.querySelectorAll('.column').forEach(col => {
-      col.classList.remove('drag-over');
-    });
-    
-    // Add 'drag-over' class only to the current column
-    e.currentTarget.closest('.column').classList.add('drag-over');
-  }
+  const targetColumnId = e.currentTarget.dataset.column;
   
-  function handleDrop(e) {
-    e.preventDefault();
-    
-    const targetColumnId = e.currentTarget.dataset.column;
-    
-    // Remove drag-over class from all columns
-    document.querySelectorAll('.column').forEach(col => {
-      col.classList.remove('drag-over');
-    });
-    
-    if (!draggedTask) return;
-    
+  // Remove drag-over class from all columns
+  document.querySelectorAll('.column').forEach(col => {
+    col.classList.remove('drag-over');
+  });
+  
+  if (!draggedTask) return;
+  
+  try {
     // Get the source column tasks
     const sourceColumnTasks = tasks[draggedTask.columnId];
     const taskIndex = sourceColumnTasks.findIndex(t => t.id === draggedTask.id);
@@ -544,172 +757,85 @@ const columns = [
     // Remove the task from its original position
     sourceColumnTasks.splice(taskIndex, 1);
     
+    // Determine if we're changing columns
+    const isSameColumn = draggedTask.columnId === targetColumnId;
+    
     // Determine the target position within the column
     let targetPosition = -1;
     
     // Get the element being dropped on
     const dropTarget = e.target.closest('.task');
     
-    if (draggedTask.columnId === targetColumnId) {
-      // Same column reordering
-      if (dropTarget) {
-        const targetTaskId = dropTarget.dataset.id;
-        const targetTasks = tasks[targetColumnId];
-        targetPosition = targetTasks.findIndex(t => t.id === targetTaskId);
-        
-        // If dropping below the middle of the target task, insert after it
-        if (e.clientY > dropTarget.getBoundingClientRect().top + dropTarget.offsetHeight / 2) {
-          targetPosition++;
-        }
-      }
+    if (dropTarget) {
+      const targetTaskId = dropTarget.dataset.id;
+      const targetTasks = tasks[targetColumnId];
+      targetPosition = targetTasks.findIndex(t => t.id === targetTaskId);
       
-      // Update task in the same column (reordering)
-      if (targetPosition !== -1) {
-        tasks[targetColumnId].splice(targetPosition, 0, taskToMove);
-      } else {
-        // If no specific target, add to the end
-        tasks[targetColumnId].push(taskToMove);
-      }
-    } else {
-      // Different column
-      // Update the column value
-      const updatedTask = {
-        ...taskToMove,
-        column: targetColumnId
-      };
-      
-      // If dropping on a specific task, insert at that position
-      if (dropTarget) {
-        const targetTaskId = dropTarget.dataset.id;
-        const targetTasks = tasks[targetColumnId];
-        targetPosition = targetTasks.findIndex(t => t.id === targetTaskId);
-        
-        // If dropping below the middle of the target task, insert after it
-        if (e.clientY > dropTarget.getBoundingClientRect().top + dropTarget.offsetHeight / 2) {
-          targetPosition++;
-        }
-        
-        if (targetPosition !== -1) {
-          tasks[targetColumnId].splice(targetPosition, 0, updatedTask);
-        } else {
-          tasks[targetColumnId].push(updatedTask);
-        }
-      } else {
-        // If no specific target, add to the end
-        tasks[targetColumnId].push(updatedTask);
+      // If dropping below the middle of the target task, insert after it
+      if (e.clientY > dropTarget.getBoundingClientRect().top + dropTarget.offsetHeight / 2) {
+        targetPosition++;
       }
     }
+    
+    // If we're changing columns, update the column property
+    if (!isSameColumn) {
+      taskToMove.column = targetColumnId;
+      
+      // Update in Firestore
+      const taskDoc = window.firestore.doc(window.db, `users/${userId}/tasks/${taskToMove.id}`);
+      await window.firestore.updateDoc(taskDoc, { 
+        column: targetColumnId,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    // Add the task at the correct position
+    if (targetPosition !== -1) {
+      tasks[targetColumnId].splice(targetPosition, 0, taskToMove);
+    } else {
+      // If no specific target, add to the end
+      tasks[targetColumnId].push(taskToMove);
+    }
+    
+    // Update localStorage as backup
+    saveDataToLocalStorage();
     
     // Clean up event listeners
     document.removeEventListener('dragover', handleDocumentDragOver);
     
-    saveData();
     renderBoard();
+  } catch (error) {
+    console.error("Error updating task position:", error);
+    
+    // Fallback to just updating locally
+    const sourceColumnTasks = tasks[draggedTask.columnId];
+    const taskIndex = sourceColumnTasks.findIndex(t => t.id === draggedTask.id);
+    
+    if (taskIndex === -1) return;
+    
+    const taskToMove = sourceColumnTasks[taskIndex];
+    sourceColumnTasks.splice(taskIndex, 1);
+    
+    // If changing columns, update the column property
+    if (draggedTask.columnId !== targetColumnId) {
+      taskToMove.column = targetColumnId;
+    }
+    
+    tasks[targetColumnId].push(taskToMove);
+    
+    saveDataToLocalStorage();
+    
+    document.removeEventListener('dragover', handleDocumentDragOver);
+    
+    renderBoard();
+    
+    showNotification('Error updating database. Changes saved locally instead.', 'error');
   }
-  
-  // Add CSS classes for due dates, drag/drop styling, task count, form elements, and notifications
-  const styleElement = document.createElement('style');
-  styleElement.textContent = `
-    .task-due-date.due-soon {
-      color: #ffff00 !important; /* Neon yellow */
-      font-weight: bold;
-    }
-    
-    .task-due-date.overdue {
-      color: #ff3333 !important; /* Red */
-      font-weight: bold;
-    }
-    
-    .big-three .task-due-date.due-soon {
-      color: #ff8800 !important; /* Orange for big three */
-      font-weight: bold;
-    }
-    
-    .big-three .task-due-date.overdue {
-      color: #ff3333 !important; /* Red for big three */
-      font-weight: bold;
-    }
-    
-    /* Drag and drop indicators */
-    .task.drop-target-above {
-      border-top: 2px solid var(--primary);
-    }
-    
-    .task.drop-target-below {
-      border-bottom: 2px solid var(--primary);
-    }
-    
-    /* Visual feedback during drag */
-    .task.dragging {
-      opacity: 0.6;
-      transform: scale(0.98);
-      box-shadow: 0 5px 10px rgba(0, 0, 0, 0.5);
-    }
-    
-    /* Cursor style for tasks */
-    .task {
-      cursor: pointer;
-    }
-    
-    /* Task count styling */
-    .task-count {
-      background-color: var(--bg-card);
-      color: var(--text-dim);
-      border-radius: 12px;
-      padding: 2px 8px;
-      font-size: 0.8rem;
-      margin-left: 8px;
-      font-weight: normal;
-    }
-    
-    /* Column selector styling */
-    .column-selector {
-      width: 100%;
-      padding: 0.5rem;
-      border-radius: 4px;
-      border: 1px solid var(--border-color);
-      background-color: var(--bg-card);
-      color: var(--text-light);
-      font-family: inherit;
-      outline: none; /* Remove the default focus outline */
-      box-shadow: none; /* Remove any box shadow */
-    }
-    
-    /* Remove the double border around the select when it's in a container */
-    #task-column {
-      padding: 0;
-      border: none;
-      background: none;
-    }
-    
-    /* Due date field container */
-    .due-date-container {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-    
-    .clear-date-btn {
-      background-color: var(--border-color);
-      color: var(--text-light);
-      border: none;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      font-size: 16px;
-      line-height: 1;
-      padding: 0;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .clear-date-btn:hover {
-      background-color: var(--danger);
-    }
-    
-    /* Notification styling */
+}
+
+// Add CSS for notifications
+function addNotificationStyles() {
+  const notificationCSS = `
     .notification {
       position: fixed;
       bottom: 20px;
@@ -721,6 +847,10 @@ const columns = [
       box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
       z-index: 1000;
       animation: slide-in 0.3s ease-out forwards;
+    }
+    
+    .notification.error {
+      background-color: var(--danger);
     }
     
     @keyframes slide-in {
@@ -737,8 +867,14 @@ const columns = [
       to { opacity: 0; }
     }
     
-    /* Highlight restored task */
-    .task.highlight-restored {
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-dim);
+      font-size: 1.2rem;
+    }
+    
+    .highlight-restored {
       animation: highlight-pulse 2s ease-in-out;
     }
     
@@ -748,9 +884,14 @@ const columns = [
       100% { box-shadow: 0 0 0 0 rgba(51, 204, 51, 0); }
     }
   `;
-  document.head.appendChild(styleElement);
   
-  // Event listeners
+  const style = document.createElement('style');
+  style.textContent = notificationCSS;
+  document.head.appendChild(style);
+}
+
+// Event listeners
+function setupEventListeners() {
   viewCompletedBtn.addEventListener('click', toggleCompletedTasksView);
   taskForm.addEventListener('submit', saveTask);
   deleteTaskBtn.addEventListener('click', deleteTask);
@@ -770,36 +911,106 @@ const columns = [
       closeTaskModal();
     }
   });
+}
+
+// Initialize the app
+function init() {
+  // Add notification CSS
+  addNotificationStyles();
   
-  // Initialize the app
-  function init() {
-    loadData();
-    renderBoard();
-    
-    // Add a wrapper around the due date input and add a clear button
-    const dueDateWrapper = document.createElement('div');
-    dueDateWrapper.className = 'due-date-container';
-    
-    // Get the original due date input
-    const originalDueDateInput = taskDueDateInput;
-    
-    // Create a clear button
-    const clearBtn = document.createElement('button');
-    clearBtn.type = 'button';
-    clearBtn.className = 'clear-date-btn';
-    clearBtn.innerHTML = '&times;';
-    clearBtn.title = 'Clear due date';
-    clearBtn.addEventListener('click', function() {
-      originalDueDateInput.value = '';
-    });
-    
-    // Replace the input with the wrapper
-    originalDueDateInput.parentNode.replaceChild(dueDateWrapper, originalDueDateInput);
-    
-    // Add the input and button to the wrapper
-    dueDateWrapper.appendChild(originalDueDateInput);
-    dueDateWrapper.appendChild(clearBtn);
-  }
+  // Set up event listeners
+  setupEventListeners();
   
-  // Start the app
-  document.addEventListener('DOMContentLoaded', init);
+  // Add a wrapper around the due date input and add a clear button
+  const dueDateWrapper = document.createElement('div');
+  dueDateWrapper.className = 'due-date-container';
+  
+  // Get the original due date input
+  const originalDueDateInput = taskDueDateInput;
+  
+  // Create a clear button
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'clear-date-btn';
+  clearBtn.innerHTML = '&times;';
+  clearBtn.title = 'Clear due date';
+  clearBtn.addEventListener('click', function() {
+    originalDueDateInput.value = '';
+  });
+  
+  // Replace the input with the wrapper
+  originalDueDateInput.parentNode.replaceChild(dueDateWrapper, originalDueDateInput);
+  
+  // Add the input and button to the wrapper
+  dueDateWrapper.appendChild(originalDueDateInput);
+  dueDateWrapper.appendChild(clearBtn);
+  
+  // Load data from Firestore (or localStorage as fallback)
+  loadData();
+  
+  // Add connection status indicator
+  addConnectionStatus();
+}
+
+// Add connection status indicator
+function addConnectionStatus() {
+  // Create a connection status indicator
+  const statusIndicator = document.createElement('div');
+  statusIndicator.className = 'connection-status';
+  statusIndicator.innerHTML = `
+    <span class="status-dot online"></span>
+    <span class="status-text">Online</span>
+  `;
+  document.querySelector('header').appendChild(statusIndicator);
+  
+  // Add CSS for connection status
+  const connectionCSS = `
+    .connection-status {
+      display: flex;
+      align-items: center;
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      margin-left: auto;
+      margin-right: 1rem;
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    
+    .status-dot.online {
+      background-color: var(--success);
+    }
+    
+    .status-dot.offline {
+      background-color: var(--danger);
+    }
+  `;
+  
+  const style = document.createElement('style');
+  style.textContent = connectionCSS;
+  document.head.appendChild(style);
+  
+  // Listen for online/offline status changes
+  window.addEventListener('online', () => {
+    statusIndicator.innerHTML = `
+      <span class="status-dot online"></span>
+      <span class="status-text">Online</span>
+    `;
+    loadData(); // Refresh data when coming back online
+  });
+  
+  window.addEventListener('offline', () => {
+    statusIndicator.innerHTML = `
+      <span class="status-dot offline"></span>
+      <span class="status-text">Offline</span>
+    `;
+    showNotification('You are offline. Changes will be saved locally.', 'error');
+  });
+}
+
+// Start the app
+document.addEventListener('DOMContentLoaded', init);
