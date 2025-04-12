@@ -3,7 +3,7 @@ let currentUser = null;
 const loginContainer = document.getElementById('login-container');
 const headerActions = document.getElementById('header-actions');
 
-// Add these authentication functions to your app.js file
+// Add these authentication functions to your app.js file 
 
 // Initialize auth state listener
 function initAuth() {
