@@ -69,6 +69,34 @@
     </div>
   </div>
 
+  <!-- Firebase SDK -->
+<script type="module">
+    // Import the functions you need from the SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
+  
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyANJqLmh0PUPkeeJ9CTCToMnP0BUiE0O3E",
+      authDomain: "bjorn-task-tracker.firebaseapp.com",
+      projectId: "bjorn-task-tracker",
+      storageBucket: "bjorn-task-tracker.firebasestorage.app",
+      messagingSenderId: "59216249167",
+      appId: "1:59216249167:web:29e170f6c72f36fd58c53a",
+      measurementId: "G-PY4JKRKYSN"
+    };
+  
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+  
+    // Make Firebase services available globally
+    window.db = db;
+    window.firestore = {
+      collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc
+    };
+  </script>
+  
   <script src="js/app.js"></script>
 </body>
 </html>
