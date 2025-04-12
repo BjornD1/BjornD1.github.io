@@ -10,11 +10,31 @@
   <div class="app">
     <header>
       <h1>Bjorn's Task Tracker</h1>
-      <button id="view-completed" class="btn">View Completed Tasks</button>
+      <div id="header-actions">
+        <button id="view-completed" class="btn">View Completed Tasks</button>
+      </div>
     </header>
 
     <main>
-      <!-- Kanban board will be here -->
+      <!-- Login Container (will be shown when not logged in) -->
+      <div id="login-container" class="login-container hidden">
+        <h2>Task Tracker Login</h2>
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" required>
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" required>
+        </div>
+        <div id="auth-error" class="error-message"></div>
+        <div class="login-actions">
+          <button id="login-btn" class="btn btn-primary">Login</button>
+          <button id="register-btn" class="btn">Register</button>
+        </div>
+      </div>
+      
+      <!-- Kanban board -->
       <div id="kanban-board" class="kanban-board"></div>
       
       <!-- Completed tasks view (hidden by default) -->
@@ -70,11 +90,12 @@
   </div>
 
   <!-- Firebase SDK -->
-<script type="module">
+  <script type="module">
     // Import the functions you need from the SDKs
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
     import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-  
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+
     // Your web app's Firebase configuration
     const firebaseConfig = {
       apiKey: "AIzaSyANJqLmh0PUPkeeJ9CTCToMnP0BUiE0O3E",
@@ -85,18 +106,23 @@
       appId: "1:59216249167:web:29e170f6c72f36fd58c53a",
       measurementId: "G-PY4JKRKYSN"
     };
-  
+
     // Initialize Firebase
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-  
+    const auth = getAuth(app);
+
     // Make Firebase services available globally
     window.db = db;
+    window.auth = auth;
     window.firestore = {
       collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc
     };
+    window.firebaseAuth = {
+      createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged
+    };
   </script>
-  
+
   <script src="js/app.js"></script>
 </body>
 </html>

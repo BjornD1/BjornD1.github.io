@@ -1,3 +1,356 @@
+// Add these variables at the top of your file, with your other state variables
+let currentUser = null;
+const loginContainer = document.getElementById('login-container');
+const headerActions = document.getElementById('header-actions');
+
+// Add these authentication functions to your app.js file
+
+// Initialize auth state listener
+function initAuth() {
+  window.firebaseAuth.onAuthStateChanged(window.auth, (user) => {
+    if (user) {
+      // User is signed in
+      currentUser = user;
+      console.log("User signed in:", user.email);
+      showUserInterface();
+      loadData(); // Load user-specific data
+    } else {
+      // User is signed out
+      currentUser = null;
+      console.log("User is signed out");
+      showLoginInterface();
+    }
+  });
+}
+
+// Show the user interface (after successful login)
+function showUserInterface() {
+  // Hide login container
+  loginContainer.classList.add('hidden');
+  
+  // Show kanban board
+  kanbanBoard.classList.remove('hidden');
+  
+  // Update header with user info and logout button
+  updateHeaderWithUserInfo();
+}
+
+// Update header with user info and logout button
+function updateHeaderWithUserInfo() {
+  if (!currentUser) return;
+  
+  // Clear existing content
+  headerActions.innerHTML = '';
+  
+  // Create user info display
+  const userInfo = document.createElement('div');
+  userInfo.className = 'user-info';
+  userInfo.innerHTML = `<span>${currentUser.email}</span>`;
+  
+  // Create button group
+  const buttonGroup = document.createElement('div');
+  buttonGroup.className = 'button-group';
+  
+  // Create view completed button
+  const viewCompletedBtn = document.createElement('button');
+  viewCompletedBtn.id = 'view-completed';
+  viewCompletedBtn.className = 'btn';
+  viewCompletedBtn.textContent = 'View Completed Tasks';
+  viewCompletedBtn.addEventListener('click', toggleCompletedTasksView);
+  
+  // Create logout button
+  const logoutBtn = document.createElement('button');
+  logoutBtn.id = 'logout-btn';
+  logoutBtn.className = 'btn';
+  logoutBtn.textContent = 'Logout';
+  logoutBtn.addEventListener('click', logout);
+  
+  // Add buttons to button group
+  buttonGroup.appendChild(viewCompletedBtn);
+  buttonGroup.appendChild(logoutBtn);
+  
+  // Add elements to header actions
+  headerActions.appendChild(userInfo);
+  headerActions.appendChild(buttonGroup);
+}
+
+// Show the login interface
+function showLoginInterface() {
+  // Hide kanban board and completed tasks
+  kanbanBoard.classList.add('hidden');
+  completedTasksView.classList.add('hidden');
+  
+  // Show login container
+  loginContainer.classList.remove('hidden');
+  
+  // Make sure event listeners are set up
+  document.getElementById('login-btn').addEventListener('click', login);
+  document.getElementById('register-btn').addEventListener('click', register);
+}
+
+// Login function
+async function login() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const errorElement = document.getElementById('auth-error');
+  
+  // Basic validation
+  if (!email || !password) {
+    errorElement.textContent = 'Please enter both email and password';
+    return;
+  }
+  
+  try {
+    await window.firebaseAuth.signInWithEmailAndPassword(window.auth, email, password);
+    // onAuthStateChanged will handle the rest
+  } catch (error) {
+    console.error('Login error:', error);
+    errorElement.textContent = error.message;
+  }
+}
+
+// Register function
+async function register() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const errorElement = document.getElementById('auth-error');
+  
+  // Basic validation
+  if (!email || !password) {
+    errorElement.textContent = 'Please enter both email and password';
+    return;
+  }
+  
+  // Password validation
+  if (password.length < 6) {
+    errorElement.textContent = 'Password must be at least 6 characters';
+    return;
+  }
+  
+  try {
+    await window.firebaseAuth.createUserWithEmailAndPassword(window.auth, email, password);
+    // onAuthStateChanged will handle the rest
+  } catch (error) {
+    console.error('Registration error:', error);
+    errorElement.textContent = error.message;
+  }
+}
+
+// Logout function
+async function logout() {
+  try {
+    await window.firebaseAuth.signOut(window.auth);
+    // onAuthStateChanged will handle the redirect
+  } catch (error) {
+    console.error('Logout error:', error);
+    showNotification('Error logging out. Please try again.', 'error');
+  }
+}
+
+
+// Update these database-related functions to use the current user's ID
+
+// Load data from Firestore
+async function loadData() {
+  if (!currentUser) return;
+  
+  try {
+    // Show loading indicator
+    kanbanBoard.innerHTML = '<div class="loading">Loading your tasks...</div>';
+    
+    // Initialize empty tasks object with all columns
+    tasks = {};
+    columns.forEach(column => {
+      tasks[column.id] = [];
+    });
+    
+    // Get tasks from Firestore - now using currentUser.uid instead of "default-user"
+    const tasksCollection = window.firestore.collection(window.db, `users/${currentUser.uid}/tasks`);
+    const snapshot = await window.firestore.getDocs(tasksCollection);
+    
+    snapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id; // Use Firestore document ID as task ID
+      if (tasks[task.column]) {
+        tasks[task.column].push(task);
+      }
+    });
+    
+    // Get completed tasks
+    const completedTasksCollection = window.firestore.collection(window.db, `users/${currentUser.uid}/completedTasks`);
+    const completedSnapshot = await window.firestore.getDocs(completedTasksCollection);
+    
+    completedTasks = [];
+    completedSnapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id;
+      completedTasks.push(task);
+    });
+    
+    // Sort completed tasks by completedAt date (newest first)
+    completedTasks.sort((a, b) => {
+      return new Date(b.completedAt) - new Date(a.completedAt);
+    });
+    
+    // Show the board
+    renderBoard();
+  } catch (error) {
+    console.error("Error loading data:", error);
+    
+    // Fall back to localStorage if Firestore fails
+    const savedTasks = localStorage.getItem(`kanban-tasks-${currentUser.uid}`);
+    const savedCompletedTasks = localStorage.getItem(`kanban-completed-tasks-${currentUser.uid}`);
+    
+    tasks = savedTasks ? JSON.parse(savedTasks) : {};
+    completedTasks = savedCompletedTasks ? JSON.parse(savedCompletedTasks) : [];
+    
+    // Initialize empty arrays for any missing columns
+    columns.forEach(column => {
+      if (!tasks[column.id]) {
+        tasks[column.id] = [];
+      }
+    });
+    
+    renderBoard();
+    
+    showNotification('Error loading from database. Using local data instead.', 'error');
+  }
+}
+
+// Save data to local storage (as backup) - now user-specific
+function saveDataToLocalStorage() {
+  if (!currentUser) return;
+  
+  localStorage.setItem(`kanban-tasks-${currentUser.uid}`, JSON.stringify(tasks));
+  localStorage.setItem(`kanban-completed-tasks-${currentUser.uid}`, JSON.stringify(completedTasks));
+}
+
+// Update the saveTask function to use currentUser.uid
+async function saveTask(e) {
+  e.preventDefault();
+  
+  if (!currentUser || !currentTask) return;
+
+  // Rest of function remains the same, but with these changes to database references:
+  
+  /* Replace:
+  const tasksCollection = window.firestore.collection(window.db, `users/default-user/tasks`);
+  
+  With:
+  const tasksCollection = window.firestore.collection(window.db, `users/${currentUser.uid}/tasks`); 
+  */
+  
+  /* Replace:
+  const taskDoc = window.firestore.doc(window.db, `users/default-user/tasks/${currentTask.id}`);
+  
+  With:
+  const taskDoc = window.firestore.doc(window.db, `users/${currentUser.uid}/tasks/${currentTask.id}`);
+  */
+}
+
+// Update all other database functions (deleteTask, completeTask, restoreTask, handleDrop) the same way
+// Replace all instances of "default-user" with currentUser.uid
+
+// Update your init function to initialize authentication
+function init() {
+  // Add notification CSS
+  addNotificationStyles();
+  
+  // Initialize authentication
+  initAuth();
+  
+  // Add a wrapper around the due date input and add a clear button
+  const dueDateWrapper = document.createElement('div');
+  dueDateWrapper.className = 'due-date-container';
+  
+  // Get the original due date input
+  const originalDueDateInput = taskDueDateInput;
+  
+  // Create a clear button
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'clear-date-btn';
+  clearBtn.innerHTML = '&times;';
+  clearBtn.title = 'Clear due date';
+  clearBtn.addEventListener('click', function() {
+    originalDueDateInput.value = '';
+  });
+  
+  // Replace the input with the wrapper
+  originalDueDateInput.parentNode.replaceChild(dueDateWrapper, originalDueDateInput);
+  
+  // Add the input and button to the wrapper
+  dueDateWrapper.appendChild(originalDueDateInput);
+  dueDateWrapper.appendChild(clearBtn);
+  
+  // Set up other event listeners
+  taskForm.addEventListener('submit', saveTask);
+  deleteTaskBtn.addEventListener('click', deleteTask);
+  completeTaskBtn.addEventListener('click', completeTask);
+  closeModalBtn.addEventListener('click', closeTaskModal);
+  
+  // Make the date field show the calendar when clicked
+  taskDueDateInput.addEventListener('click', function() {
+    // This forces the calendar to show by triggering the click event programmatically
+    this.showPicker();
+  });
+  
+  // Close modal when clicking outside
+  taskModal.addEventListener('click', function(event) {
+    // If the click was directly on the modal background (not on its children)
+    if (event.target === taskModal) {
+      closeTaskModal();
+    }
+  });
+}
+
+// Add this function to add CSS for authentication
+function addAuthStyles() {
+  const authCSS = `
+    .user-info {
+      display: flex;
+      align-items: center;
+      color: var(--text-dim);
+      margin-right: 1rem;
+    }
+    
+    .button-group {
+      display: flex;
+      gap: 0.5rem;
+    }
+    
+    .login-container {
+      max-width: 400px;
+      margin: 50px auto;
+      background-color: var(--bg-column);
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .login-container h2 {
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    
+    .login-actions {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 1.5rem;
+    }
+    
+    .error-message {
+      color: var(--danger);
+      font-size: 0.9rem;
+      margin-top: 0.5rem;
+    }
+  `;
+  
+  const style = document.createElement('style');
+  style.textContent = authCSS;
+  document.head.appendChild(style);
+}
+
 // Define the columns
 const columns = [
   { id: 'waiting-on', title: 'Waiting On', color: 'neon-blue' },
@@ -13,7 +366,7 @@ let tasks = {};
 let completedTasks = [];
 let currentTask = null;
 let draggedTask = null;
-const userId = "default-user"; // We'll replace this with real authentication later
+const userId = "currentUser.uid"; // We'll replace this with real authentication later
 
 // DOM elements
 const kanbanBoard = document.getElementById('kanban-board');
@@ -79,7 +432,7 @@ async function loadData() {
     console.error("Error loading data:", error);
     
     // Fall back to localStorage if Firestore fails
-    const savedTasks = localStorage.getItem('kanban-tasks');
+    const savedTasks = localStorage.getItem('kanban-tasks-${currentUser.uid}');
     const savedCompletedTasks = localStorage.getItem('kanban-completed-tasks');
     
     tasks = savedTasks ? JSON.parse(savedTasks) : {};
