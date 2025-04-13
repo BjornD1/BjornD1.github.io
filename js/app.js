@@ -1367,3 +1367,354 @@ function addConnectionStatus() {
 
 // Start the app
 document.addEventListener('DOMContentLoaded', init);
+
+// Authentication Variables
+let currentUser = null;
+
+// Additional DOM elements for authentication
+const authContainer = document.getElementById('auth-container');
+const mainContainer = document.getElementById('main-container');
+const loginForm = document.getElementById('login-form');
+const signupForm = document.getElementById('signup-form');
+const showSignupLink = document.getElementById('show-signup');
+const showLoginLink = document.getElementById('show-login');
+const loginBtn = document.getElementById('login-btn');
+const signupBtn = document.getElementById('signup-btn');
+const loginEmail = document.getElementById('login-email');
+const loginPassword = document.getElementById('login-password');
+const signupEmail = document.getElementById('signup-email');
+const signupPassword = document.getElementById('signup-password');
+const signupConfirm = document.getElementById('signup-confirm');
+const loginError = document.getElementById('login-error');
+const signupError = document.getElementById('signup-error');
+const logoutBtn = document.getElementById('logout-btn');
+
+// Toggle between login and signup forms
+function toggleAuthForms() {
+  loginForm.classList.toggle('hidden');
+  signupForm.classList.toggle('hidden');
+}
+
+// Handle login
+async function handleLogin() {
+  const email = loginEmail.value.trim();
+  const password = loginPassword.value;
+  
+  // Basic validation
+  if (!email || !password) {
+    loginError.textContent = 'Please enter both email and password';
+    return;
+  }
+  
+  loginBtn.disabled = true;
+  loginBtn.textContent = 'Logging in...';
+  loginError.textContent = '';
+  
+  try {
+    const userCredential = await window.firebaseAuth.signInWithEmailAndPassword(window.auth, email, password);
+    currentUser = userCredential.user;
+    
+    // Reset form
+    loginEmail.value = '';
+    loginPassword.value = '';
+    
+    // Show main app
+    authContainer.classList.add('hidden');
+    mainContainer.classList.remove('hidden');
+    
+    // Load user's tasks
+    loadData();
+  } catch (error) {
+    console.error('Login error:', error);
+    
+    // Display appropriate error message
+    if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+      loginError.textContent = 'Invalid email or password';
+    } else if (error.code === 'auth/too-many-requests') {
+      loginError.textContent = 'Too many failed login attempts. Please try again later.';
+    } else {
+      loginError.textContent = 'Error signing in. Please try again.';
+    }
+  } finally {
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Login';
+  }
+}
+
+// Handle signup
+async function handleSignup() {
+  const email = signupEmail.value.trim();
+  const password = signupPassword.value;
+  const confirmPassword = signupConfirm.value;
+  
+  // Basic validation
+  if (!email || !password) {
+    signupError.textContent = 'Please enter both email and password';
+    return;
+  }
+  
+  if (password !== confirmPassword) {
+    signupError.textContent = 'Passwords do not match';
+    return;
+  }
+  
+  if (password.length < 6) {
+    signupError.textContent = 'Password must be at least 6 characters';
+    return;
+  }
+  
+  signupBtn.disabled = true;
+  signupBtn.textContent = 'Creating account...';
+  signupError.textContent = '';
+  
+  try {
+    const userCredential = await window.firebaseAuth.createUserWithEmailAndPassword(window.auth, email, password);
+    currentUser = userCredential.user;
+    
+    // Reset form
+    signupEmail.value = '';
+    signupPassword.value = '';
+    signupConfirm.value = '';
+    
+    // Show main app
+    authContainer.classList.add('hidden');
+    mainContainer.classList.remove('hidden');
+    
+    // Initialize empty tasks for new user
+    initializeUserTasks();
+  } catch (error) {
+    console.error('Signup error:', error);
+    
+    // Display appropriate error message
+    if (error.code === 'auth/email-already-in-use') {
+      signupError.textContent = 'This email is already in use';
+    } else if (error.code === 'auth/invalid-email') {
+      signupError.textContent = 'Please enter a valid email address';
+    } else if (error.code === 'auth/weak-password') {
+      signupError.textContent = 'Password is too weak';
+    } else {
+      signupError.textContent = 'Error creating account. Please try again.';
+    }
+  } finally {
+    signupBtn.disabled = false;
+    signupBtn.textContent = 'Sign Up';
+  }
+}
+
+// Initialize empty task collections for new users
+async function initializeUserTasks() {
+  if (!currentUser) return;
+  
+  // Initialize empty tasks object with all columns
+  tasks = {};
+  columns.forEach(column => {
+    tasks[column.id] = [];
+  });
+  
+  completedTasks = [];
+  
+  // Save to localStorage as backup
+  saveDataToLocalStorage();
+  
+  // Render empty board
+  renderBoard();
+  
+  showNotification('Welcome! Start by adding your first task.', 'success');
+}
+
+// Handle logout
+async function handleLogout() {
+  try {
+    await window.firebaseAuth.signOut(window.auth);
+    
+    // Reset app state
+    currentUser = null;
+    tasks = {};
+    completedTasks = [];
+    
+    // Show login screen
+    mainContainer.classList.add('hidden');
+    authContainer.classList.remove('hidden');
+    
+    // Show login form, hide signup form
+    loginForm.classList.remove('hidden');
+    signupForm.classList.add('hidden');
+    
+    showNotification('Logged out successfully', 'success');
+  } catch (error) {
+    console.error('Logout error:', error);
+    showNotification('Error logging out', 'error');
+  }
+}
+
+// Auth state observer
+function setupAuthObserver() {
+  window.firebaseAuth.onAuthStateChanged(window.auth, (user) => {
+    if (user) {
+      // User is signed in
+      currentUser = user;
+      userId = user.uid; // Update the userId to be the user's Firebase UID
+      
+      // Show main app
+      authContainer.classList.add('hidden');
+      mainContainer.classList.remove('hidden');
+      
+      // Load user's tasks
+      loadData();
+    } else {
+      // User is signed out
+      currentUser = null;
+      
+      // Show login screen
+      mainContainer.classList.add('hidden');
+      authContainer.classList.remove('hidden');
+    }
+  });
+}
+
+// Add auth event listeners
+function setupAuthEventListeners() {
+  showSignupLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleAuthForms();
+  });
+  
+  showLoginLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleAuthForms();
+  });
+  
+  loginBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleLogin();
+  });
+  
+  signupBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    handleSignup();
+  });
+  
+  logoutBtn.addEventListener('click', handleLogout);
+}
+
+// Update loadData to use current user's ID
+async function loadData() {
+  try {
+    // Show loading indicator
+    kanbanBoard.innerHTML = '<div class="loading">Loading your tasks...</div>';
+    
+    // Ensure we have a user
+    if (!currentUser) {
+      return;
+    }
+    
+    userId = currentUser.uid;
+    
+    // Initialize empty tasks object with all columns
+    tasks = {};
+    columns.forEach(column => {
+      tasks[column.id] = [];
+    });
+    
+    // Get tasks from Firestore
+    const tasksCollection = window.firestore.collection(window.db, `users/${userId}/tasks`);
+    const snapshot = await window.firestore.getDocs(tasksCollection);
+    
+    snapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id; // Use Firestore document ID as task ID
+      if (tasks[task.column]) {
+        tasks[task.column].push(task);
+      }
+    });
+    
+    // Get completed tasks
+    const completedTasksCollection = window.firestore.collection(window.db, `users/${userId}/completedTasks`);
+    const completedSnapshot = await window.firestore.getDocs(completedTasksCollection);
+    
+    completedTasks = [];
+    completedSnapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id;
+      completedTasks.push(task);
+    });
+    
+    // Sort completed tasks by completedAt date (newest first)
+    completedTasks.sort((a, b) => {
+      return new Date(b.completedAt) - new Date(a.completedAt);
+    });
+    
+    // Show the board
+    renderBoard();
+  } catch (error) {
+    console.error("Error loading data:", error);
+    
+    // Fall back to localStorage if Firestore fails
+    const savedTasks = localStorage.getItem(`kanban-tasks-${userId}`);
+    const savedCompletedTasks = localStorage.getItem(`kanban-completed-tasks-${userId}`);
+    
+    tasks = savedTasks ? JSON.parse(savedTasks) : {};
+    completedTasks = savedCompletedTasks ? JSON.parse(savedCompletedTasks) : [];
+    
+    // Initialize empty arrays for any missing columns
+    columns.forEach(column => {
+      if (!tasks[column.id]) {
+        tasks[column.id] = [];
+      }
+    });
+    
+    renderBoard();
+    
+    showNotification('Error loading from database. Using local data instead.', 'error');
+  }
+}
+
+// Update saveDataToLocalStorage to use current user's ID
+function saveDataToLocalStorage() {
+  if (currentUser) {
+    localStorage.setItem(`kanban-tasks-${currentUser.uid}`, JSON.stringify(tasks));
+    localStorage.setItem(`kanban-completed-tasks-${currentUser.uid}`, JSON.stringify(completedTasks));
+  }
+}
+
+// Update the init function to set up auth
+function init() {
+  // Add notification CSS
+  addNotificationStyles();
+  
+  // Set up regular event listeners
+  setupEventListeners();
+  
+  // Set up authentication listeners
+  setupAuthEventListeners();
+  
+  // Set up auth state observer
+  setupAuthObserver();
+  
+  // Add a wrapper around the due date input and add a clear button
+  const dueDateWrapper = document.createElement('div');
+  dueDateWrapper.className = 'due-date-container';
+  
+  // Get the original due date input
+  const originalDueDateInput = taskDueDateInput;
+  
+  // Create a clear button
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'clear-date-btn';
+  clearBtn.innerHTML = '&times;';
+  clearBtn.title = 'Clear due date';
+  clearBtn.addEventListener('click', function() {
+    originalDueDateInput.value = '';
+  });
+  
+  // Replace the input with the wrapper
+  originalDueDateInput.parentNode.replaceChild(dueDateWrapper, originalDueDateInput);
+  
+  // Add the input and button to the wrapper
+  dueDateWrapper.appendChild(originalDueDateInput);
+  dueDateWrapper.appendChild(clearBtn);
+  
+  // Add connection status indicator
+  addConnectionStatus();
+}
