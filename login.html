@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Bjorn's Task Tracker</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <style>
+    /* Authentication styling */
+    .auth-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 1rem;
+      background-color: var(--bg-dark);
+    }
+    
+    .auth-box {
+      background-color: var(--bg-column);
+      border-radius: 8px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+    
+    .auth-box h1 {
+      text-align: center;
+      margin-bottom: 2rem;
+      color: var(--neon-blue);
+    }
+    
+    .auth-form h2 {
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+    
+    .auth-form p {
+      text-align: center;
+      margin-top: 1rem;
+      font-size: 0.9rem;
+    }
+    
+    .auth-form a {
+      color: var(--neon-blue);
+      text-decoration: none;
+    }
+    
+    .auth-form a:hover {
+      text-decoration: underline;
+    }
+    
+    .error-message {
+      color: var(--danger);
+      margin-top: 1rem;
+      font-size: 0.9rem;
+      text-align: center;
+    }
+    
+    .form-group {
+      margin-bottom: 1rem;
+    }
+    
+    .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-size: 0.9rem;
+    }
+    
+    .form-group input {
+      width: 100%;
+      padding: 0.5rem;
+      border-radius: 4px;
+      border: 1px solid var(--border-color);
+      background-color: var(--bg-card);
+      color: var(--text-light);
+      font-family: inherit;
+    }
+    
+    .btn {
+      background-color: var(--bg-column);
+      color: var(--text-light);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: background-color 0.2s;
+      width: 100%;
+      margin-top: 1rem;
+    }
+    
+    .btn-primary {
+      background-color: var(--primary);
+    }
+    
+    .btn-primary:hover {
+      background-color: #2277cc;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    /* Notification styling */
+    .notification {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: var(--success);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 4px;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      animation: slide-in 0.3s ease-out forwards;
+    }
+    
+    .notification.error {
+      background-color: var(--danger);
+    }
+    
+    @keyframes slide-in {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    
+    .notification.fade-out {
+      animation: fade-out 0.5s ease-out forwards;
+    }
+    
+    @keyframes fade-out {
+      from { opacity: 1; }
+      to { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-container">
+    <div class="auth-box">
+      <h1>Bjorn's Task Tracker</h1>
+      
+      <!-- Login form -->
+      <div id="login-form" class="auth-form">
+        <h2>Login</h2>
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" required>
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" required>
+        </div>
+        <button id="login-btn" class="btn btn-primary">Login</button>
+        <p>Don't have an account? <a href="#" id="show-signup">Sign up</a></p>
+        <div id="login-error" class="error-message"></div>
+      </div>
+      
+      <!-- Sign up form -->
+      <div id="signup-form" class="auth-form hidden">
+        <h2>Sign Up</h2>
+        <div class="form-group">
+          <label for="signup-email">Email</label>
+          <input type="email" id="signup-email" required>
+        </div>
+        <div class="form-group">
+          <label for="signup-password">Password</label>
+          <input type="password" id="signup-password" required>
+        </div>
+        <div class="form-group">
+          <label for="signup-confirm">Confirm Password</label>
+          <input type="password" id="signup-confirm" required>
+        </div>
+        <button id="signup-btn" class="btn btn-primary">Sign Up</button>
+        <p>Already have an account? <a href="#" id="show-login">Login</a></p>
+        <div id="signup-error" class="error-message"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    // Import the functions you need from the SDKs
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+  
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyANJqLmh0PUPkeeJ9CTCToMnP0BUiE0O3E",
+      authDomain: "bjorn-task-tracker.firebaseapp.com",
+      projectId: "bjorn-task-tracker",
+      storageBucket: "bjorn-task-tracker.firebasestorage.app",
+      messagingSenderId: "59216249167",
+      appId: "1:59216249167:web:29e170f6c72f36fd58c53a",
+      measurementId: "G-PY4JKRKYSN"
+    };
+  
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    
+    // DOM elements
+    const loginForm = document.getElementById('login-form');
+    const signupForm = document.getElementById('signup-form');
+    const showSignupLink = document.getElementById('show-signup');
+    const showLoginLink = document.getElementById('show-login');
+    const loginBtn = document.getElementById('login-btn');
+    const signupBtn = document.getElementById('signup-btn');
+    const loginEmail = document.getElementById('login-email');
+    const loginPassword = document.getElementById('login-password');
+    const signupEmail = document.getElementById('signup-email');
+    const signupPassword = document.getElementById('signup-password');
+    const signupConfirm = document.getElementById('signup-confirm');
+    const loginError = document.getElementById('login-error');
+    const signupError = document.getElementById('signup-error');
+    
+    // Check if user is already logged in
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        // Redirect to main app if already logged in
+        window.location.href = 'index.html';
+      }
+    });
+    
+    // Toggle between login and signup forms
+    function toggleAuthForms() {
+      loginForm.classList.toggle('hidden');
+      signupForm.classList.toggle('hidden');
+    }
+    
+    // Show notification
+    function showNotification(message, type = 'success') {
+      const notification = document.createElement('div');
+      notification.className = `notification ${type}`;
+      notification.textContent = message;
+      
+      document.body.appendChild(notification);
+      
+      // Remove notification after 3 seconds
+      setTimeout(() => {
+        notification.classList.add('fade-out');
+        setTimeout(() => {
+          notification.remove();
+        }, 500);
+      }, 3000);
+    }
+    
+    // Handle login
+    async function handleLogin() {
+      const email = loginEmail.value.trim();
+      const password = loginPassword.value;
+      
+      // Basic validation
+      if (!email || !password) {
+        loginError.textContent = 'Please enter both email and password';
+        return;
+      }
+      
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Logging in...';
+      loginError.textContent = '';
+      
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+        // Successful login - redirect will happen automatically via the onAuthStateChanged handler
+      } catch (error) {
+        console.error('Login error:', error);
+        
+        // Display appropriate error message
+        if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password') {
+          loginError.textContent = 'Invalid email or password';
+        } else if (error.code === 'auth/too-many-requests') {
+          loginError.textContent = 'Too many failed login attempts. Please try again later.';
+        } else {
+          loginError.textContent = 'Error signing in. Please try again.';
+        }
+      } finally {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Login';
+      }
+    }
+    
+    // Handle signup
+    async function handleSignup() {
+      const email = signupEmail.value.trim();
+      const password = signupPassword.value;
+      const confirmPassword = signupConfirm.value;
+      
+      // Basic validation
+      if (!email || !password) {
+        signupError.textContent = 'Please enter both email and password';
+        return;
+      }
+      
+      if (password !== confirmPassword) {
+        signupError.textContent = 'Passwords do not match';
+        return;
+      }
+      
+      if (password.length < 6) {
+        signupError.textContent = 'Password must be at least 6 characters';
+        return;
+      }
+      
+      signupBtn.disabled = true;
+      signupBtn.textContent = 'Creating account...';
+      signupError.textContent = '';
+      
+      try {
+        await createUserWithEmailAndPassword(auth, email, password);
+        // Successful signup - redirect will happen automatically via the onAuthStateChanged handler
+      } catch (error) {
+        console.error('Signup error:', error);
+        
+        // Display appropriate error message
+        if (error.code === 'auth/email-already-in-use') {
+          signupError.textContent = 'This email is already in use';
+        } else if (error.code === 'auth/invalid-email') {
+          signupError.textContent = 'Please enter a valid email address';
+        } else if (error.code === 'auth/weak-password') {
+          signupError.textContent = 'Password is too weak';
+        } else {
+          signupError.textContent = 'Error creating account. Please try again.';
+        }
+      } finally {
+        signupBtn.disabled = false;
+        signupBtn.textContent = 'Sign Up';
+      }
+    }
+    
+    // Set up event listeners
+    showSignupLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleAuthForms();
+    });
+    
+    showLoginLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleAuthForms();
+    });
+    
+    loginBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleLogin();
+    });
+    
+    signupBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleSignup();
+    });
+  </script>
+</body>
+</html>

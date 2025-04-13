@@ -1,3 +1,262 @@
+// Define the columns
+const columns = [
+  { id: 'waiting-on', title: 'Waiting On', color: 'neon-blue' },
+  { id: 'in-progress', title: 'In Progress', color: 'neon-green' },
+  { id: 'on-deck', title: 'On Deck', color: 'neon-yellow' },
+  { id: 'pipeline', title: 'Pipeline', color: 'neon-orange' },
+  { id: 'low-priority', title: 'Low Priority', color: 'neon-purple' },
+  { id: 'ideas', title: 'Ideas', color: 'neon-pink' }
+];
+
+// State management
+let tasks = {};
+let completedTasks = [];
+let currentTask = null;
+let draggedTask = null;
+let userId = null; // Will be set from authentication
+
+// DOM elements
+const kanbanBoard = document.getElementById('kanban-board');
+const completedTasksView = document.getElementById('completed-tasks');
+const completedList = document.getElementById('completed-list');
+const viewCompletedBtn = document.getElementById('view-completed');
+const taskModal = document.getElementById('task-modal');
+const taskForm = document.getElementById('task-form');
+const modalTitle = document.getElementById('modal-title');
+const taskTitleInput = document.getElementById('task-title');
+const taskDescriptionInput = document.getElementById('task-description');
+const taskDueDateInput = document.getElementById('task-due-date');
+const taskColumnDisplay = document.getElementById('task-column');
+const taskBigThreeCheckbox = document.getElementById('task-big-three');
+const deleteTaskBtn = document.getElementById('delete-task');
+const completeTaskBtn = document.getElementById('complete-task');
+const closeModalBtn = document.getElementById('close-modal');
+
+// Load data from Firestore
+async function loadData() {
+  try {
+    // Show loading indicator
+    kanbanBoard.innerHTML = '<div class="loading">Loading your tasks...</div>';
+    
+    // Get current user ID
+    const currentUser = window.auth.currentUser;
+    if (!currentUser) {
+      showNotification('You must be logged in to view tasks', 'error');
+      return;
+    }
+    
+    userId = currentUser.uid;
+    
+    // Initialize empty tasks object with all columns
+    tasks = {};
+    columns.forEach(column => {
+      tasks[column.id] = [];
+    });
+    
+    // Get tasks from Firestore
+    const tasksCollection = window.firestore.collection(window.db, `users/${userId}/tasks`);
+    const snapshot = await window.firestore.getDocs(tasksCollection);
+    
+    snapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id; // Use Firestore document ID as task ID
+      if (tasks[task.column]) {
+        tasks[task.column].push(task);
+      }
+    });
+    
+    // Get completed tasks
+    const completedTasksCollection = window.firestore.collection(window.db, `users/${userId}/completedTasks`);
+    const completedSnapshot = await window.firestore.getDocs(completedTasksCollection);
+    
+    completedTasks = [];
+    completedSnapshot.forEach(doc => {
+      const task = doc.data();
+      task.id = doc.id;
+      completedTasks.push(task);
+    });
+    
+    // Sort completed tasks by completedAt date (newest first)
+    completedTasks.sort((a, b) => {
+      return new Date(b.completedAt) - new Date(a.completedAt);
+    });
+    
+    // Show the board
+    renderBoard();
+  } catch (error) {
+    console.error("Error loading data:", error);
+    
+    // Fall back to localStorage if Firestore fails
+    const savedTasks = localStorage.getItem(`kanban-tasks-${userId}`);
+    const savedCompletedTasks = localStorage.getItem(`kanban-completed-tasks-${userId}`);
+    
+    tasks = savedTasks ? JSON.parse(savedTasks) : {};
+    completedTasks = savedCompletedTasks ? JSON.parse(savedCompletedTasks) : [];
+    
+    // Initialize empty arrays for any missing columns
+    columns.forEach(column => {
+      if (!tasks[column.id]) {
+        tasks[column.id] = [];
+      }
+    });
+    
+    renderBoard();
+    
+    showNotification('Error loading from database. Using local data instead.', 'error');
+  }
+}
+
+// Save data to local storage (as backup)
+function saveDataToLocalStorage() {
+  localStorage.setItem(`kanban-tasks-${userId}`, JSON.stringify(tasks));
+  localStorage.setItem(`kanban-completed-tasks-${userId}`, JSON.stringify(completedTasks));
+}
+
+// Initialize empty task collections for new users
+async function initializeUserTasks() {
+  if (!userId) {
+    userId = window.auth.currentUser.uid;
+  }
+  
+  // Initialize empty tasks object with all columns
+  tasks = {};
+  columns.forEach(column => {
+    tasks[column.id] = [];
+  });
+  
+  completedTasks = [];
+  
+  // Save to localStorage as backup
+  saveDataToLocalStorage();
+  
+  // Render empty board
+  renderBoard();
+  
+  showNotification('Welcome! Start by adding your first task.', 'success');
+}
+
+// Generate a unique ID
+function generateId() {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+}
+
+// Format date for display
+function formatDate(dateString) {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// Get column title from ID
+function getColumnTitle(columnId) {
+  const column = columns.find(col => col.id === columnId);
+  return column ? column.title : '';
+}
+
+// Render the kanban board
+function renderBoard() {
+  kanbanBoard.innerHTML = '';
+  
+  columns.forEach(column => {
+    const columnEl = document.createElement('div');
+    columnEl.className = 'column';
+    columnEl.dataset.id = column.id;
+    
+    // Get task count for this column
+    const taskCount = tasks[column.id] ? tasks[column.id].length : 0;
+    
+    columnEl.innerHTML = `
+      <div class="column-header">
+        <h2>${column.title} <span class="task-count">${taskCount}</span></h2>
+      </div>
+      <div class="tasks" data-column="${column.id}"></div>
+      <button class="add-task-btn" data-column="${column.id}">+</button>
+    `;
+    
+    kanbanBoard.appendChild(columnEl);
+    
+    const tasksContainer = columnEl.querySelector('.tasks');
+    
+    // Add tasks to the column
+    if (tasks[column.id]) {
+      tasks[column.id].forEach(task => {
+        const taskEl = createTaskElement(task);
+        tasksContainer.appendChild(taskEl);
+      });
+    }
+    
+    // Add drag and drop event listeners to the column
+    tasksContainer.addEventListener('dragover', handleDragOver);
+    tasksContainer.addEventListener('drop', handleDrop);
+  });
+  
+  // Add event listeners to add task buttons
+  document.querySelectorAll('.add-task-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const columnId = btn.dataset.column;
+      openAddTaskModal(columnId);
+    });
+  });
+}
+
+// ... [rest of your app.js code remains the same] ...
+
+// Initialize the app
+function init() {
+  // Add notification CSS
+  addNotificationStyles();
+  
+  // Set up event listeners
+  setupEventListeners();
+  
+  // Add a wrapper around the due date input and add a clear button
+  const dueDateWrapper = document.createElement('div');
+  dueDateWrapper.className = 'due-date-container';
+  
+  // Get the original due date input
+  const originalDueDateInput = taskDueDateInput;
+  
+  // Create a clear button
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'clear-date-btn';
+  clearBtn.innerHTML = '&times;';
+  clearBtn.title = 'Clear due date';
+  clearBtn.addEventListener('click', function() {
+    originalDueDateInput.value = '';
+  });
+  
+  // Replace the input with the wrapper
+  originalDueDateInput.parentNode.replaceChild(dueDateWrapper, originalDueDateInput);
+  
+  // Add the input and button to the wrapper
+  dueDateWrapper.appendChild(originalDueDateInput);
+  dueDateWrapper.appendChild(clearBtn);
+  
+  // Add connection status indicator
+  addConnectionStatus();
+  
+  // Set up authentication listener
+  window.firebaseAuth.onAuthStateChanged(window.auth, (user) => {
+    if (user) {
+      // User is signed in
+      userId = user.currentUser.uid;
+      
+      // Load user's tasks
+      loadData();
+    } else {
+      // User is signed out, redirect to login page
+      window.location.href = 'login.html';
+    }
+  });
+}
+
+// ... [The rest of your existing code should remain the same] ...
+
+// Start the app
+document.addEventListener('DOMContentLoaded', init);
+
 // Add these variables at the top of your file, with your other state variables
 let currentUser = null;
 const loginContainer = document.getElementById('login-container');

@@ -8,112 +8,66 @@
 </head>
 <body>
   <div class="app">
-    <!-- Auth container (shown when not logged in) -->
-    <div id="auth-container" class="auth-container">
-      <div class="auth-box">
-        <h1>Bjorn's Task Tracker</h1>
-        
-        <!-- Login form -->
-        <div id="login-form" class="auth-form">
-          <h2>Login</h2>
-          <div class="form-group">
-            <label for="login-email">Email</label>
-            <input type="email" id="login-email" required>
-          </div>
-          <div class="form-group">
-            <label for="login-password">Password</label>
-            <input type="password" id="login-password" required>
-          </div>
-          <button id="login-btn" class="btn btn-primary">Login</button>
-          <p>Don't have an account? <a href="#" id="show-signup">Sign up</a></p>
-          <div id="login-error" class="error-message"></div>
-        </div>
-        
-        <!-- Sign up form -->
-        <div id="signup-form" class="auth-form hidden">
-          <h2>Sign Up</h2>
-          <div class="form-group">
-            <label for="signup-email">Email</label>
-            <input type="email" id="signup-email" required>
-          </div>
-          <div class="form-group">
-            <label for="signup-password">Password</label>
-            <input type="password" id="signup-password" required>
-          </div>
-          <div class="form-group">
-            <label for="signup-confirm">Confirm Password</label>
-            <input type="password" id="signup-confirm" required>
-          </div>
-          <button id="signup-btn" class="btn btn-primary">Sign Up</button>
-          <p>Already have an account? <a href="#" id="show-login">Login</a></p>
-          <div id="signup-error" class="error-message"></div>
-        </div>
+    <header>
+      <h1>Bjorn's Task Tracker</h1>
+      <div class="header-buttons">
+        <button id="view-completed" class="btn">View Completed Tasks</button>
+        <button id="logout-btn" class="btn btn-danger">Logout</button>
       </div>
-    </div>
-    
-    <!-- Main app container (shown when logged in) -->
-    <div id="main-container" class="main-container hidden">
-      <header>
-        <h1>Bjorn's Task Tracker</h1>
-        <div class="header-buttons">
-          <button id="view-completed" class="btn">View Completed Tasks</button>
-          <button id="logout-btn" class="btn btn-danger">Logout</button>
-        </div>
-      </header>
+    </header>
 
-      <main>
-        <!-- Kanban board will be here -->
-        <div id="kanban-board" class="kanban-board"></div>
-        
-        <!-- Completed tasks view (hidden by default) -->
-        <div id="completed-tasks" class="completed-tasks hidden">
-          <h2>Completed Tasks</h2>
-          <div id="completed-list" class="completed-list"></div>
-        </div>
-      </main>
+    <main>
+      <!-- Kanban board will be here -->
+      <div id="kanban-board" class="kanban-board"></div>
+      
+      <!-- Completed tasks view (hidden by default) -->
+      <div id="completed-tasks" class="completed-tasks hidden">
+        <h2>Completed Tasks</h2>
+        <div id="completed-list" class="completed-list"></div>
+      </div>
+    </main>
 
-      <!-- Task modal (hidden by default) -->
-      <div id="task-modal" class="modal hidden">
-        <div class="modal-content">
-          <button id="close-modal" class="close-btn">&times;</button>
-          <h2 id="modal-title">Edit Task</h2>
-          <form id="task-form">
-            <div class="form-group">
-              <label for="task-title">Title</label>
-              <input type="text" id="task-title" required>
+    <!-- Task modal (hidden by default) -->
+    <div id="task-modal" class="modal hidden">
+      <div class="modal-content">
+        <button id="close-modal" class="close-btn">&times;</button>
+        <h2 id="modal-title">Edit Task</h2>
+        <form id="task-form">
+          <div class="form-group">
+            <label for="task-title">Title</label>
+            <input type="text" id="task-title" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="task-description">Description</label>
+            <textarea id="task-description"></textarea>
+          </div>
+          
+          <div class="form-group">
+            <label for="task-due-date">Due Date</label>
+            <input type="date" id="task-due-date" placeholder="Select a date">
+          </div>
+          
+          <div class="form-group">
+            <label for="task-column">Current Column</label>
+            <div id="task-column" class="current-column"></div>
+          </div>
+          
+          <div class="form-group checkbox">
+            <input type="checkbox" id="task-big-three">
+            <label for="task-big-three">Big 3</label>
+          </div>
+          
+          <div class="modal-actions">
+            <div class="left-actions">
+              <button type="button" id="delete-task" class="btn btn-danger">Delete</button>
+              <button type="button" id="complete-task" class="btn btn-success">Complete</button>
             </div>
-            
-            <div class="form-group">
-              <label for="task-description">Description</label>
-              <textarea id="task-description"></textarea>
+            <div class="right-actions">
+              <button type="submit" class="btn btn-primary">Save</button>
             </div>
-            
-            <div class="form-group">
-              <label for="task-due-date">Due Date</label>
-              <input type="date" id="task-due-date" placeholder="Select a date">
-            </div>
-            
-            <div class="form-group">
-              <label for="task-column">Current Column</label>
-              <div id="task-column" class="current-column"></div>
-            </div>
-            
-            <div class="form-group checkbox">
-              <input type="checkbox" id="task-big-three">
-              <label for="task-big-three">Big 3</label>
-            </div>
-            
-            <div class="modal-actions">
-              <div class="left-actions">
-                <button type="button" id="delete-task" class="btn btn-danger">Delete</button>
-                <button type="button" id="complete-task" class="btn btn-success">Complete</button>
-              </div>
-              <div class="right-actions">
-                <button type="submit" class="btn btn-primary">Save</button>
-              </div>
-            </div>
-          </form>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   </div>
@@ -123,7 +77,7 @@
     // Import the functions you need from the SDKs
     import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
     import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js";
-    import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
+    import { getAuth, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js";
   
     // Your web app's Firebase configuration
     const firebaseConfig = {
@@ -141,6 +95,14 @@
     const db = getFirestore(app);
     const auth = getAuth(app);
   
+    // Check if user is authenticated
+    onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        // Redirect to login page if not logged in
+        window.location.href = 'login.html';
+      }
+    });
+  
     // Make Firebase services available globally
     window.db = db;
     window.auth = auth;
@@ -148,8 +110,19 @@
       collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc
     };
     window.firebaseAuth = {
-      signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged
+      signOut, onAuthStateChanged
     };
+    
+    // Handle logout
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      try {
+        await signOut(auth);
+        // Redirect handled by onAuthStateChanged
+      } catch (error) {
+        console.error('Logout error:', error);
+        alert('Error logging out: ' + error.message);
+      }
+    });
   </script>
   
   <script src="js/app.js"></script>
